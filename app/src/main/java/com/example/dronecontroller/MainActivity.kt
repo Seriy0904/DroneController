@@ -11,12 +11,18 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -38,17 +44,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.times
 import com.example.dronecontroller.ui.theme.DroneControllerTheme
+import com.example.dronecontroller.ui.theme.JoystickSize
+import com.manalkaff.jetstick.JoyStick
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.ConnectException
 import kotlin.math.absoluteValue
 
 class MainActivity : ComponentActivity() {
@@ -104,6 +116,7 @@ fun GreetingWithIp(context: Context, modifier: Modifier = Modifier) {
                                         .show()
                                     (context as Activity).requestedOrientation =
                                         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
                                 } else {
                                     Toast.makeText(
                                         context,
@@ -113,7 +126,7 @@ fun GreetingWithIp(context: Context, modifier: Modifier = Modifier) {
                                         .show()
                                 }
                             } catch (e: Exception) {
-                                Log.e("MyTag", "Error: ${e.message}")
+                                Log.e("MyTag", "Error: ${e}")
                                 Toast.makeText(context, "Что-то пошло не так", Toast.LENGTH_SHORT)
                                     .show()
                                 clickable = true
@@ -133,80 +146,121 @@ fun GreetingWithIp(context: Context, modifier: Modifier = Modifier) {
         var acceleration by remember {
             mutableStateOf(Acceleration())
         }
-        Column(Modifier.padding(10.dp)) {
-            Text(text = "X: ${acceleration.xAc}")
-            Text(text = "Y: ${acceleration.yAc}")
-            Text(text = "Z: ${acceleration.zAc}")
-        }
-        LaunchedEffect(Unit) {
-            withContext(Dispatchers.IO){
-                while (true){
-                    Log.d("MyTag", "repeat")
-                    try {
-                        val result = RetrofitInstance.api.getMpuAcceleration()
-                        if (result.isSuccessful) {
-                            acceleration = result.body()!!
-                            delay(1000)
+        Row(Modifier.fillMaxSize()) {
+//            JoyStick()
+            Column(Modifier.padding(10.dp)) {
+                Text(text = "X: ${acceleration.xAc}")
+                Text(text = "Y: ${acceleration.yAc}")
+                Text(text = "Z: ${acceleration.zAc}")
+//                Text(text = "XZ angle: ${acceleration.xzAngle}")
+//                Text(text = "YZ angle: ${acceleration.yzAngle}")
+                Box(contentAlignment = Alignment.Center) {
+                    Image(
+                        painter = painterResource(id = R.drawable.joystick_background),
+                        contentDescription = "Joystick Background",
+                        Modifier.size(JoystickSize),
+                    )
+                    Image(
+                        painter = painterResource(id = R.drawable.joystick_ball),
+                        contentDescription = "Joystick Ball",
+                        Modifier
+                            .size(JoystickSize / 5)
+                            .offset(
+                                -acceleration.xAc* ((JoystickSize / 2) - JoystickSize / 10),
+                                acceleration.yAc * ((JoystickSize / 2) - JoystickSize / 10)
+                            )
+                    )
+
+                }
+            }
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    while (true) {
+                        Log.d("MyTag", "repeat")
+                        try {
+                            val result = RetrofitInstance.api.getMpuAcceleration()
+                            if (result.isSuccessful) {
+                                acceleration = result.body()!!
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MyTag", "Error: ${e.message}")
+                            if (e is ConnectException) {
+                                (context as Activity).requestedOrientation =
+                                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                Toast.makeText(context, "Подключение прервано", Toast.LENGTH_SHORT)
+                                    .show()
+                            }
                         }
+                        delay(100)
+                    }
+                }
+            }
+
+            Button(onClick = {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        RetrofitInstance.api.mpuCalibrate()
                     } catch (e: Exception) {
                         Log.e("MyTag", "Error: ${e.message}")
                     }
-                    delay(100)
                 }
+            }) {
+                Image(
+                    painter = painterResource(id = R.drawable.calibration_image),
+                    contentDescription = "Calibrate sensor"
+                )
             }
-        }
-
-
-        Column(modifier = modifier.fillMaxSize(), horizontalAlignment = Alignment.End) {
-            var sliderState by remember { mutableStateOf(0f) }
-            var oldStableState by remember { mutableStateOf(0) }
-            Slider(
-                value = sliderState, onValueChange = {
-                    sliderState = it
-                    if (((sliderState * 100).toInt() - oldStableState).absoluteValue > 1) {
-                        oldStableState = (sliderState * 100).toInt()
+            Column(modifier = modifier.fillMaxSize(), horizontalAlignment = Alignment.End) {
+                var sliderState by remember { mutableStateOf(0f) }
+                var oldStableState by remember { mutableStateOf(0) }
+                Slider(
+                    value = sliderState, onValueChange = {
+                        sliderState = it
+                        if (((sliderState * 100).toInt() - oldStableState).absoluteValue > 1) {
+                            oldStableState = (sliderState * 100).toInt()
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    RetrofitInstance.api.setMotorPower(oldStableState)
+                                } catch (e: Exception) {
+                                    Log.e("MyTag", "Error: ${e.message}")
+                                }
+                            }
+                            Log.d("MyTag", "Power: $oldStableState")
+                        }
+                    },
+                    onValueChangeFinished = {
+                        sliderState = 0f
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
-                                RetrofitInstance.api.setMotorPower(oldStableState)
+                                RetrofitInstance.api.setMotorPower(0)
                             } catch (e: Exception) {
                                 Log.e("MyTag", "Error: ${e.message}")
                             }
                         }
-                        Log.d("MyTag", "Power: $oldStableState")
-                    }
-                },
-                onValueChangeFinished = {
-                    sliderState = 0f
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            RetrofitInstance.api.setMotorPower(0)
-                        } catch (e: Exception) {
-                            Log.e("MyTag", "Error: ${e.message}")
+                    },
+                    modifier = modifier
+                        .graphicsLayer {
+                            rotationZ = 270f
+                            transformOrigin = TransformOrigin(0f, 0f)
                         }
-                    }
-                },
-                modifier = modifier
-                    .graphicsLayer {
-                        rotationZ = 270f
-                        transformOrigin = TransformOrigin(0f, 0f)
-                    }
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(
-                            Constraints(
-                                minWidth = constraints.minHeight,
-                                maxWidth = constraints.maxHeight,
-                                minHeight = constraints.minWidth,
-                                maxHeight = constraints.maxHeight,
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(
+                                Constraints(
+                                    minWidth = constraints.minHeight,
+                                    maxWidth = constraints.maxHeight,
+                                    minHeight = constraints.minWidth,
+                                    maxHeight = constraints.maxHeight,
+                                )
                             )
-                        )
-                        layout(placeable.height, placeable.width) {
-                            placeable.place(-placeable.width, 0)
+                            layout(placeable.height, placeable.width) {
+                                placeable.place(-placeable.width, 0)
+                            }
                         }
-                    }
-                    .padding(vertical = 20.dp, horizontal = 10.dp)
+                        .padding(vertical = 20.dp, horizontal = 40.dp)
 //                    .width(120.dp)
-                    .height(80.dp)
-            )
+                        .height(80.dp)
+                )
+            }
         }
     }
 }
